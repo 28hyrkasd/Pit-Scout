@@ -102,7 +102,7 @@ export function SettingsFields() {
               <h2 id={`section-${section}`} className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
                 {SECTION_LABELS[section]}
               </h2>
-              <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => openNew(section)}>
+              <Button type="button" variant="outline" size="sm" className="h-11" onClick={() => openNew(section)}>
                 <PlusIcon aria-hidden /> Add
               </Button>
             </div>

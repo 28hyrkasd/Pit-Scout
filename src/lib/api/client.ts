@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { withTimeout } from "@/lib/offline-ui/timeout";
 
 /**
  * Why a request failed, so the UI can react differently:
@@ -43,10 +44,30 @@ function wireSchema<S extends z.ZodType>(dataSchema: S) {
 }
 
 /**
+ * How long a read may take before it counts as a network failure. On venue wifi that is
+ * connected but has no internet, a request can hang for minutes; the screens need an
+ * answer (cached data, or an error with a retry button) long before that.
+ */
+export const REQUEST_TIMEOUT_MS = 12_000;
+
+/**
  * GET a route handler and validate the envelope + payload with zod.
  * Resolves with the data, or throws ApiError (which TanStack Query surfaces as `error`).
+ * Never hangs: after REQUEST_TIMEOUT_MS it throws ApiError "network".
  */
-export async function apiGet<S extends z.ZodType>(
+export function apiGet<S extends z.ZodType>(
+  path: string,
+  dataSchema: S,
+  signal?: AbortSignal,
+): Promise<{ data: z.infer<S>; fetchedAt: string }> {
+  return withTimeout(
+    fetchEnvelope(path, dataSchema, signal),
+    REQUEST_TIMEOUT_MS,
+    () => new ApiError("network", "The server took too long to respond. Check your connection."),
+  );
+}
+
+async function fetchEnvelope<S extends z.ZodType>(
   path: string,
   dataSchema: S,
   signal?: AbortSignal,

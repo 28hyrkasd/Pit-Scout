@@ -59,7 +59,7 @@ export function FieldRow({ field, isFirst, isLast, busy, onEdit, onMove, onArchi
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="size-6"
+                className="size-11"
                 disabled={isFirst || busy}
                 onClick={() => onMove("up")}
                 aria-label={`Move ${field.name} up`}
@@ -70,7 +70,7 @@ export function FieldRow({ field, isFirst, isLast, busy, onEdit, onMove, onArchi
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="size-6"
+                className="size-11"
                 disabled={isLast || busy}
                 onClick={() => onMove("down")}
                 aria-label={`Move ${field.name} down`}

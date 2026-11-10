@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export type AppUser = {
@@ -19,6 +20,9 @@ export type AppUser = {
  * There are no roles: every signed-in user can do everything in the app.
  */
 export const getCurrentUser = cache(async (): Promise<AppUser | null> => {
+  // getClaims() reads Date.now() to check token expiry, which Next rejects during prerendering
+  // (cacheComponents). Opt out of prerendering here so every caller is request-time only.
+  await connection();
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
   const claims = data?.claims;

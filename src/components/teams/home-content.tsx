@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarSearchIcon } from "lucide-react";
-import { EventTeamsPreview } from "@/components/teams/event-teams-preview";
+import { EventTeamList } from "@/components/teams/event-team-list";
 import { formatEventDates, formatEventLocation } from "@/lib/format-event";
 import { useSelectedEvent } from "@/lib/local/use-selected-event";
 
@@ -29,7 +29,7 @@ export function HomeContent() {
         <h1 className="text-xl font-semibold">{event.name}</h1>
         {meta ? <p className="text-sm text-muted-foreground">{meta}</p> : null}
       </div>
-      <EventTeamsPreview eventKey={event.key} />
+      <EventTeamList eventKey={event.key} />
     </div>
   );
 }

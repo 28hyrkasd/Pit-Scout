@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider, isServer } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { OfflineProvider } from "@/components/offline/offline-provider";
 
 function makeQueryClient() {
   return new QueryClient({
@@ -21,8 +22,16 @@ function makeQueryClient() {
         retry: 2,
         retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
         // Refetching every time the tab regains focus would hammer the APIs and
-        // burn battery; the sync indicator (Phase 8) owns "refresh on focus".
+        // burn battery; the OfflineProvider owns "sync on focus" and refetches entry queries after a sync.
         refetchOnWindowFocus: false,
+      },
+      mutations: {
+        // Same reasoning as queries: try right away instead of pausing forever while the app thinks it is
+        // offline (a paused mutation would leave a button spinning with no way out). A failure shows its
+        // error so the scout can retry. Scouting entries do not use mutations at all: they are saved to the
+        // device and synced by the OfflineProvider.
+        networkMode: "offlineFirst",
+        retry: false,
       },
     },
   });
@@ -39,5 +48,9 @@ function getQueryClient() {
 }
 
 export function Providers({ children }: { children: ReactNode }) {
-  return <QueryClientProvider client={getQueryClient()}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={getQueryClient()}>
+      <OfflineProvider>{children}</OfflineProvider>
+    </QueryClientProvider>
+  );
 }

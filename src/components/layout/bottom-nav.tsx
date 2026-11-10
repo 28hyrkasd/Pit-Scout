@@ -15,9 +15,21 @@ export function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" || pathname.startsWith("/teams") : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function BottomNav() {
-  const pathname = usePathname();
+/**
+ * usePathname() is only known at request time on dynamic routes such as
+ * /teams/[teamNumber]/edit, so the layout renders this inside <Suspense>. The
+ * fallback is the same nav with nothing highlighted: it keeps the bar's size and
+ * links in the prerendered shell, and the active tab fills in on the client.
+ */
+export function BottomNavFallback() {
+  return <NavView pathname={null} />;
+}
 
+export function BottomNav() {
+  return <NavView pathname={usePathname()} />;
+}
+
+function NavView({ pathname }: { pathname: string | null }) {
   return (
     <nav
       aria-label="Main"
@@ -25,7 +37,7 @@ export function BottomNav() {
     >
       <ul className="mx-auto flex max-w-2xl">
         {ITEMS.map(({ href, label, Icon }) => {
-          const active = isActive(pathname, href);
+          const active = pathname !== null && isActive(pathname, href);
           return (
             <li key={href} className="flex-1">
               <Link
