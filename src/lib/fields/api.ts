@@ -5,7 +5,7 @@ import { classifySaveError } from "@/lib/entries/save-error";
 import { cacheKeys, cacheSchemas } from "@/lib/offline/cache";
 import { readThrough } from "@/lib/offline-ui/cached-fetch";
 import { isSupabaseReachabilityError } from "@/lib/offline-ui/reachability";
-import { getOfflineStore } from "@/lib/offline-ui/runtime";
+import { getOfflineStore, isKnownOffline } from "@/lib/offline-ui/runtime";
 import { withTimeout } from "@/lib/offline-ui/timeout";
 import { createClient } from "@/lib/supabase/client";
 import { toFieldColumns } from "./convert";
@@ -79,6 +79,7 @@ export function useFields() {
           return parsed.fields;
         },
         shouldFallback: isSupabaseReachabilityError,
+        preferCache: isKnownOffline,
       });
       return { fields: result.value, invalid, cachedAt: result.cachedAt };
     },
@@ -154,17 +155,16 @@ export function useReorderFields() {
   const invalidate = useInvalidateFields();
   return useMutation({
     mutationFn: async (changes: { id: string; sortOrder: number }[]) => {
+      if (changes.length === 0) return;
       const supabase = createClient();
-      const results = await Promise.all(
-        changes.map((c) =>
-          supabase.from("field_definitions").update({ sort_order: c.sortOrder }).eq("id", c.id).select("id"),
-        ),
-      );
-      const failed = results.find((r) => r.error);
-      if (failed?.error) throw new FieldsError(describeDbError(failed.error));
-      if (results.some((r) => !r.data || r.data.length < 1)) throw new FieldsError(NOT_ALLOWED);
+      // One RPC = one transaction: every field moves or none does (and a row RLS blocks fails the whole call).
+      const { error } = await supabase.rpc("reorder_field_definitions", {
+        p_ids: changes.map((c) => c.id),
+        p_sort_orders: changes.map((c) => c.sortOrder),
+      });
+      if (error) throw new FieldsError(describeDbError(error));
     },
-    // Always refetch, even on partial failure, so the UI shows what actually saved.
+    // Always refetch, even on failure, so the UI shows what is actually saved.
     onSettled: invalidate,
   });
 }

@@ -43,8 +43,8 @@ import { SUPERSEDED_NOTICE } from "@/lib/offline-ui/merge-entries";
 import {
   describeLocalSaveError,
   describeSaveOutcome,
+  resolvePhotoRemovals,
   saveScoutingLocally,
-  type PhotoRemovalInput,
 } from "@/lib/offline-ui/local-save";
 import { useUnsavedChangesGuard } from "@/lib/unsaved-guard";
 
@@ -110,23 +110,13 @@ export function EntryForm({
   const busy = saving || photos.processing > 0;
 
   /** Removals for the core: a server photo needs its record (the device may never have seen it); a device photo needs only its id. */
-  function collectRemovals(): PhotoRemovalInput[] {
-    const removals: PhotoRemovalInput[] = [];
-    for (const id of photos.removedIds) {
-      const photo = savedPhotos.find((p) => p.id === id);
-      if (!photo) continue;
-      if (photo.source === "local") {
-        removals.push({ id });
-        continue;
-      }
-      const record = photoState.serverPhotos.find((p) => p.id === id);
-      if (record && photoState.serverEntryId)
-        removals.push({
-          id,
-          serverPhoto: { id, entryId: photoState.serverEntryId, storagePath: record.storagePath },
-        });
-    }
-    return removals;
+  function collectRemovals() {
+    return resolvePhotoRemovals({
+      removedIds: photos.removedIds,
+      saved: savedPhotos,
+      serverPhotos: photoState.serverPhotos,
+      serverEntryId: photoState.serverEntryId,
+    });
   }
 
   async function onSubmit(values: EntryFormValues) {
@@ -135,6 +125,15 @@ export function EntryForm({
     if (!store) {
       // IndexedDB (or the in-memory fallback) is still opening; that takes a moment at app start.
       setSaveError("Still getting this device ready to save. Try again in a moment.");
+      return;
+    }
+
+    const resolved = collectRemovals();
+    if (resolved.unresolved.length > 0) {
+      // Never save while a removal could be silently dropped: the tile would disappear but the photo would stay.
+      setSaveError(
+        "Can't remove a photo yet because the saved photos haven't finished loading. Nothing was saved. Try again in a moment.",
+      );
       return;
     }
 
@@ -163,7 +162,7 @@ export function EntryForm({
         base: serverEntry,
         writeEntry,
         staged: photos.staged.map(({ id, blob }) => ({ id, blob })),
-        removals: collectRemovals(),
+        removals: resolved.removals,
       });
     } catch (error) {
       // Nothing was written. Everything the scout entered stays on screen so they can retry.
@@ -174,7 +173,7 @@ export function EntryForm({
       return;
     }
 
-    photos.settle(result.addedPhotoIds, result.removedPhotoIds);
+    photos.settle(result.addedPhotoIds, [...result.removedPhotoIds, ...resolved.alreadyGone]);
     // Send what was just saved (non-blocking). It also refreshes the sync counters and this team's merged view.
     const syncAttempt = offline.notifyLocalChange();
 

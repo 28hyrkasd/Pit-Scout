@@ -20,6 +20,51 @@ export type StagedPhotoInput = { id: string; blob: Blob };
 /** A photo the scout removed. `serverPhoto` is required when it exists on the server (the device may have no record of it). */
 export type PhotoRemovalInput = { id: string; serverPhoto?: PhotoRecord };
 
+export type ResolvedRemovals = {
+  /** Ready to hand to saveScoutingLocally. */
+  removals: PhotoRemovalInput[];
+  /** Marked for removal but no longer listed (someone else already removed it): nothing left to do, just clear the mark. */
+  alreadyGone: string[];
+  /** Server photos whose record is not available right now. These must NOT be dropped silently: the save has to wait. */
+  unresolved: string[];
+};
+
+/**
+ * Turn the scout's "remove" marks into removals for the core.
+ *  - a device-only photo needs just its id;
+ *  - a server photo needs its record and the server entry id (the device may never have seen it);
+ *  - a photo that is no longer listed has nothing to remove;
+ *  - a server photo we cannot describe is reported in `unresolved` so the caller can refuse to save
+ *    (otherwise the tile would vanish from the screen while the photo stayed on the server).
+ */
+export function resolvePhotoRemovals(args: {
+  removedIds: Iterable<string>;
+  saved: readonly { id: string; source: "server" | "local" }[];
+  serverPhotos: readonly { id: string; storagePath: string }[];
+  serverEntryId: string | null;
+}): ResolvedRemovals {
+  const out: ResolvedRemovals = { removals: [], alreadyGone: [], unresolved: [] };
+  for (const id of args.removedIds) {
+    const photo = args.saved.find((p) => p.id === id);
+    if (!photo) {
+      out.alreadyGone.push(id);
+      continue;
+    }
+    if (photo.source === "local") {
+      out.removals.push({ id });
+      continue;
+    }
+    const record = args.serverPhotos.find((p) => p.id === id);
+    if (record && args.serverEntryId)
+      out.removals.push({
+        id,
+        serverPhoto: { id, entryId: args.serverEntryId, storagePath: record.storagePath },
+      });
+    else out.unresolved.push(id);
+  }
+  return out;
+}
+
 export type LocalSaveResult = {
   /** The saved entry record, or null when only photos changed. */
   entry: LocalEntry | null;

@@ -4,6 +4,7 @@ import { EventSwitcher } from "@/components/events/event-switcher";
 import { SyncAttentionBanner, SyncStatusChip } from "@/components/offline/sync-status";
 import { BottomNav, BottomNavFallback } from "@/components/layout/bottom-nav";
 import { UserMenu, UserMenuSkeleton } from "@/components/layout/user-menu";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
 
 export default function AppLayout({ children }: LayoutProps<"/">) {
   return (
@@ -18,6 +19,7 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
         </div>
       </header>
       <SyncAttentionBanner />
+      <InstallPrompt />
       <main className="flex-1 p-4">{children}</main>
       <Suspense fallback={<BottomNavFallback />}>
         <BottomNav />

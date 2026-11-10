@@ -13,11 +13,11 @@ import {
 import { onlineManager, useQueryClient } from "@tanstack/react-query";
 import { SaveError } from "@/lib/entries/save-error";
 import { entryKeys } from "@/lib/entries/api";
-import { ConnectivityMonitor, type ConnectivityStatus } from "@/lib/offline/connectivity";
+import type { ConnectivityMonitor, ConnectivityStatus } from "@/lib/offline/connectivity";
 import { createSupabaseSyncDeps } from "@/lib/offline/supabase-deps";
 import type { SyncPassResult } from "@/lib/offline/sync";
 import type { OfflineStore } from "@/lib/offline/store";
-import { getOfflineStore } from "@/lib/offline-ui/runtime";
+import { getConnectivityMonitor, getOfflineStore } from "@/lib/offline-ui/runtime";
 import {
   INITIAL_SNAPSHOT,
   SyncController,
@@ -67,16 +67,6 @@ export function useOffline(): OfflineContextValue {
   return useContext(OfflineContext);
 }
 
-/** Build the monitor without touching the DOM when there is none (server render): nothing runs until start(). */
-function createMonitor(): ConnectivityMonitor {
-  const hasDom = typeof window !== "undefined";
-  return new ConnectivityMonitor({
-    fetch: (url, init) => fetch(url, init),
-    windowTarget: hasDom ? window : undefined,
-    documentTarget: hasDom ? document : undefined,
-  });
-}
-
 /**
  * Owns the offline machinery for the whole app: opens the device store once, runs the connectivity monitor, and
  * drives sync passes (see SyncController for the triggers). Everything that touches indexedDB / window happens
@@ -85,7 +75,8 @@ function createMonitor(): ConnectivityMonitor {
 export function OfflineProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [controller] = useState(() => new SyncController());
-  const [monitor] = useState(createMonitor);
+  // The tab-wide monitor: query functions read the same one (isKnownOffline) so screens and the indicator agree.
+  const [monitor] = useState<ConnectivityMonitor>(getConnectivityMonitor);
   const [store, setStore] = useState<OfflineStore | null>(null);
 
   const connectivity = useSyncExternalStore(monitor.subscribe, monitor.getSnapshot, monitor.getServerSnapshot);
@@ -99,6 +90,17 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       return monitor.subscribe(() => setOnline(monitor.getSnapshot() !== "offline"));
     });
   }, [monitor]);
+
+  // Reads answer from the device cache while offline (see readThrough's preferCache). The moment the connection
+  // is back, refetch what is on screen so "Showing saved data" gives way to the real thing.
+  useEffect(() => {
+    let previous = monitor.getSnapshot();
+    return monitor.subscribe(() => {
+      const next = monitor.getSnapshot();
+      if (previous === "offline" && next === "online") void queryClient.invalidateQueries();
+      previous = next;
+    });
+  }, [monitor, queryClient]);
 
   useEffect(() => {
     let cancelled = false;

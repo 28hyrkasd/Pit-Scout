@@ -36,6 +36,37 @@ describe("readThrough", () => {
     expect(out).toEqual({ value: [9], cachedAt: 555 });
   });
 
+  it("preferCache: a known-offline read answers from the cache without touching the network", async () => {
+    const { store, getStore } = setup();
+    await cachePut(store, "k", [9], () => 555);
+    const fetch = vi.fn(async () => [1]);
+    const out = await readThrough({ getStore, key: "k", schema, fetch, shouldFallback: offline, preferCache: () => true });
+    expect(out).toEqual({ value: [9], cachedAt: 555 });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("preferCache with nothing cached still tries the network (a wrong 'offline' must not hide data)", async () => {
+    const { getStore } = setup();
+    const out = await readThrough({
+      getStore,
+      key: "k",
+      schema,
+      fetch: async () => [1],
+      shouldFallback: offline,
+      preferCache: () => true,
+      now: () => 1,
+    });
+    expect(out).toEqual({ value: [1], cachedAt: null });
+  });
+
+  it("preferCache false behaves as before: network first", async () => {
+    const { store, getStore } = setup();
+    await cachePut(store, "k", [9], () => 555);
+    const out = await readThrough({ getStore, key: "k", schema, fetch: async () => [1], shouldFallback: offline, preferCache: () => false, now: () => 2 });
+    expect(out.cachedAt).toBeNull();
+    expect(out.value).toEqual([1]);
+  });
+
   it("rethrows the original error when there is no cache", async () => {
     const { getStore } = setup();
     const error = new TypeError("Failed to fetch");

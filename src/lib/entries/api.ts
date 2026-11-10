@@ -11,7 +11,7 @@ import {
   type CachedPhotoRecord,
 } from "@/lib/offline-ui/entries-cache";
 import { isSupabaseReachabilityError } from "@/lib/offline-ui/reachability";
-import { getOfflineStore } from "@/lib/offline-ui/runtime";
+import { getOfflineStore, isKnownOffline } from "@/lib/offline-ui/runtime";
 import { withTimeout } from "@/lib/offline-ui/timeout";
 import { listEntryPhotos, signPhotoUrls } from "@/lib/photos/storage";
 import { createClient } from "@/lib/supabase/client";
@@ -70,6 +70,14 @@ export function useEntry(eventKey: string | null, teamNumber: number) {
     enabled: eventKey !== null,
     queryFn: async (): Promise<EntryLoad> => {
       const supabase = createClient();
+      // Known offline: answer from the saved event list right away instead of waiting on a request that cannot succeed.
+      if (isKnownOffline()) {
+        const { store } = await getOfflineStore();
+        const hit = await cacheGet(store, entriesCacheKeys.eventEntries(eventKey ?? ""), savedEntryListSchema).catch(
+          () => null,
+        );
+        if (hit) return { entry: findTeamEntry(hit.value, teamNumber), cachedAt: hit.savedAt };
+      }
       try {
         const { data, error, status } = await bounded(
           supabase
@@ -127,6 +135,7 @@ export function useEventEntries(eventKey: string | null) {
           });
         },
         shouldFallback: isSupabaseReachabilityError,
+        preferCache: isKnownOffline,
       });
       return { entries: result.value, cachedAt: result.cachedAt };
     },
@@ -173,6 +182,7 @@ export function useEntryPhotos(entryId: string | null) {
           return records.map((r) => ({ id: r.id, storagePath: r.storagePath }));
         },
         shouldFallback: isSupabaseReachabilityError,
+        preferCache: isKnownOffline,
       });
 
       let urls = new Map<string, string>();

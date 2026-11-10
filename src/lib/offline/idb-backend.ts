@@ -223,28 +223,71 @@ export class IdbBackend implements StorageBackend {
 // Opening the store
 // ---------------------------------------------------------------------------
 
-export type OpenStoreOptions = IdbBackendOptions & BackendStoreOptions;
+export type OpenStoreOptions = IdbBackendOptions &
+  BackendStoreOptions & {
+    /**
+     * How long opening (and probing) the database may take. indexedDB.open() never fails when another tab keeps an
+     * older connection open during a version upgrade: it just waits, so without a limit the app would sit on
+     * "still getting this device ready" forever. Default 10s.
+     */
+    openTimeoutMs?: number;
+  };
+
+export const DEFAULT_OPEN_TIMEOUT_MS = 10_000;
+
+const BLOCKED_MESSAGE =
+  "Offline storage is busy because Pit-Scout is open in another tab or window. Close the other tabs and reload.";
+const TIMEOUT_MESSAGE =
+  "Offline storage took too long to open. Close other Pit-Scout tabs or windows and reload.";
 
 /**
  * Open the IndexedDB-backed store, and PROVE it works by writing and deleting a
  * probe record. Some browsers (old Safari private mode) open the database fine
  * and then fail every write with a quota error; that must read as "unavailable",
- * not "device full". Rejects with StorageUnavailableError.
+ * not "device full". Rejects with StorageUnavailableError, including when the
+ * open does not finish within `openTimeoutMs` (usually another tab blocking an upgrade).
  */
 export async function openOfflineStore(
   options: OpenStoreOptions = {},
 ): Promise<OfflineStore> {
-  const backend = new IdbBackend(options);
+  let blocked = false;
+  const backend = new IdbBackend({
+    ...options,
+    onBlocked: () => {
+      blocked = true;
+      options.onBlocked?.();
+    },
+  });
+  let abandoned = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await backend.open();
-    await backend.tx(["meta"], "readwrite", async (tx) => {
-      await tx.put("meta", 1, "__probe");
-      await tx.delete("meta", "__probe");
+    const opening = (async () => {
+      await backend.open();
+      // After a timeout the backend was closed: probing now would just open a second, leaked connection.
+      if (abandoned) return;
+      await backend.tx(["meta"], "readwrite", async (tx) => {
+        await tx.put("meta", 1, "__probe");
+        await tx.delete("meta", "__probe");
+      });
+    })();
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        abandoned = true;
+        reject(
+          new StorageUnavailableError(blocked ? BLOCKED_MESSAGE : TIMEOUT_MESSAGE),
+        );
+      }, options.openTimeoutMs ?? DEFAULT_OPEN_TIMEOUT_MS);
     });
+    // The loser of the race must not surface as an unhandled rejection.
+    opening.catch(() => undefined);
+    await Promise.race([opening, timeout]);
   } catch (cause) {
+    abandoned = true;
     backend.close();
     if (cause instanceof StorageUnavailableError) throw cause;
     throw new StorageUnavailableError(undefined, { cause });
+  } finally {
+    clearTimeout(timer);
   }
   return new BackendStore(backend, { onCorrupt: options.onCorrupt });
 }

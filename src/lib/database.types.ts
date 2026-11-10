@@ -206,6 +206,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      reorder_field_definitions: {
+        Args: { p_ids: string[]; p_sort_orders: number[] };
+        Returns: undefined;
+      };
       upsert_scouting_entry: {
         Args: {
           p_answers: Json;

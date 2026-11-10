@@ -26,8 +26,9 @@ describe("nextConnectivity (pure hysteresis)", () => {
     expect(run(["probe-failure", "probe-failure", "probe-success"]).status).toBe("online");
   });
 
-  it("unknown + one failure stays unknown", () => {
-    expect(run(["probe-failure"]).status).toBe("unknown");
+  it("unknown + one failure is already offline (nothing known yet, so nothing to flap from)", () => {
+    expect(run(["probe-failure"]).status).toBe("offline");
+    expect(run(["browser-offline"]).status).toBe("offline");
   });
 
   it("the browser's 'offline' event is a hint worth one failure, not a verdict", () => {
@@ -146,9 +147,8 @@ describe("ConnectivityMonitor", () => {
     await vi.advanceTimersByTimeAsync(2_999);
     expect(monitor.getSnapshot()).toBe("unknown");
     await vi.advanceTimersByTimeAsync(1);
-    // failure #1 recorded (still unknown), signal was aborted
+    // the first check timed out: that is already "offline" (no waiting for a second one), signal was aborted
     expect((calls[0].init.signal as AbortSignal).aborted).toBe(true);
-    await vi.advanceTimersByTimeAsync(8_000 + 3_000); // next probe also times out
     expect(monitor.getSnapshot()).toBe("offline");
     monitor.stop();
   });

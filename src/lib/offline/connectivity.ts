@@ -69,8 +69,11 @@ export function nextConnectivity(
     case "browser-offline": {
       const consecutiveFailures = state.consecutiveFailures + 1;
       return {
+        // Hysteresis protects a connection we KNOW is up from flapping on one dropped packet. With nothing known
+        // yet (app just opened) there is nothing to flap from, so a failed first check is already the answer:
+        // waiting for a second one would leave the app on "Checking connection" for another probe interval.
         status:
-          consecutiveFailures >= config.failuresToOffline
+          consecutiveFailures >= config.failuresToOffline || state.status === "unknown"
             ? "offline"
             : state.status,
         consecutiveFailures,

@@ -6,7 +6,7 @@ import { appEventSchema } from "@/lib/external/schemas";
 import { cacheKeys, cacheSchemas } from "@/lib/offline/cache";
 import { readThrough } from "@/lib/offline-ui/cached-fetch";
 import { isApiReachabilityError } from "@/lib/offline-ui/reachability";
-import { getOfflineStore } from "@/lib/offline-ui/runtime";
+import { getOfflineStore, isKnownOffline } from "@/lib/offline-ui/runtime";
 import { hasUnsavedChanges } from "@/lib/unsaved-guard";
 import { ApiError, apiGet } from "./client";
 import { loginRedirectUrl } from "./login-redirect";
@@ -82,6 +82,7 @@ async function cachedApiGet<T>(args: {
       return res.data;
     },
     shouldFallback: isApiReachabilityError,
+    preferCache: isKnownOffline,
   });
   return {
     data: result.value,

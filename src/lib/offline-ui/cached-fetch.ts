@@ -24,8 +24,21 @@ export async function readThrough<T>(args: {
   schema: z.ZodType<T>;
   fetch: () => Promise<T>;
   shouldFallback: (error: unknown) => boolean;
+  /**
+   * true when we already KNOW the network is down. Then the cached copy is served first, without waiting for a
+   * request that is certain to fail (on a dead connection that wait is seconds of spinner). With no cached copy
+   * the request is still attempted, so a wrong "offline" can never hide data that is available.
+   */
+  preferCache?: () => boolean;
   now?: () => number;
 }): Promise<Cached<T>> {
+  if (args.preferCache?.()) {
+    const hit = await args
+      .getStore()
+      .then((store) => cacheGet(store, args.key, args.schema))
+      .catch(() => null);
+    if (hit) return { value: hit.value, cachedAt: hit.savedAt };
+  }
   let value: T;
   try {
     value = await args.fetch();

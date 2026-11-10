@@ -41,7 +41,9 @@ export async function updateSession(request: NextRequest) {
 
   // Do not run code between createServerClient and getClaims().
   const { data } = await supabase.auth.getClaims();
-  const isSignedIn = Boolean(data?.claims);
+  // Same rule as getCurrentUser() in lib/auth.ts: a session needs a subject. If the two disagreed, a page could
+  // load while every API call and server-side check answered "not signed in".
+  const isSignedIn = Boolean(data?.claims?.sub);
   const { pathname } = request.nextUrl;
 
   if (!isSignedIn && !isPublicPath(pathname)) {

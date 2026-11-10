@@ -4,7 +4,7 @@ import type { SavedEntry } from "@/lib/entries/rpc";
 import { StorageUnavailableError } from "@/lib/offline/errors";
 import { getLocalEntry, listLocalPhotos } from "@/lib/offline/local";
 import { EMPTY_PAYLOAD, EVENT, jpeg, makeEnv } from "@/lib/offline/test-utils";
-import { describeLocalSaveError, describeSaveOutcome, saveScoutingLocally } from "./local-save";
+import { describeLocalSaveError, describeSaveOutcome, resolvePhotoRemovals, saveScoutingLocally } from "./local-save";
 
 const BASE: SavedEntry = {
   id: "99999999-0000-4000-8000-000000000001",
@@ -157,5 +157,38 @@ describe("describeSaveOutcome (the toast after a sync attempt)", () => {
     expect(failed.message).toMatch(/permission/);
     const net = describeSaveOutcome(e({ status: "failed", lastError: { kind: "network", message: "Can't reach the server." } }), false, 254);
     expect(net.kind).toBe("waiting");
+  });
+});
+
+describe("resolvePhotoRemovals", () => {
+  const serverPhotos = [{ id: "s1", storagePath: "e/s1.jpg" }];
+  const base = {
+    saved: [
+      { id: "s1", source: "server" as const },
+      { id: "l1", source: "local" as const },
+    ],
+    serverPhotos,
+    serverEntryId: "entry-1",
+  };
+
+  it("a device photo needs only its id; a server photo carries its record", () => {
+    expect(resolvePhotoRemovals({ ...base, removedIds: ["l1", "s1"] })).toEqual({
+      removals: [{ id: "l1" }, { id: "s1", serverPhoto: { id: "s1", entryId: "entry-1", storagePath: "e/s1.jpg" } }],
+      alreadyGone: [],
+      unresolved: [],
+    });
+  });
+
+  it("a server photo without its record or entry id is reported, never dropped silently", () => {
+    expect(resolvePhotoRemovals({ ...base, removedIds: ["s1"], serverPhotos: [] }).unresolved).toEqual(["s1"]);
+    expect(resolvePhotoRemovals({ ...base, removedIds: ["s1"], serverEntryId: null }).unresolved).toEqual(["s1"]);
+  });
+
+  it("a photo that is no longer listed has nothing to remove", () => {
+    expect(resolvePhotoRemovals({ ...base, removedIds: ["gone"] })).toEqual({
+      removals: [],
+      alreadyGone: ["gone"],
+      unresolved: [],
+    });
   });
 });

@@ -304,6 +304,44 @@ describe("IndexedDB unavailable", () => {
     expect(result.reason).toBeUndefined();
   });
 
+  it("an open that never finishes (another tab blocking an upgrade) times out into the in-memory fallback", async () => {
+    vi.useFakeTimers();
+    try {
+      const closes: string[] = [];
+      let release: ((db: IDBPDatabase<unknown>) => void) | undefined;
+      const fake = fakeIdb();
+      const result = openOfflineStoreWithFallback({
+        hasIndexedDB: () => true,
+        openTimeoutMs: 500,
+        openDB: (_name, _version, callbacks) =>
+          new Promise<IDBPDatabase<unknown>>((resolve) => {
+            callbacks.blocked?.(1, 2, null as never);
+            release = (db) => resolve(db);
+          }).then((db) => {
+            const original = db.close.bind(db);
+            db.close = () => {
+              closes.push("closed");
+              original();
+            };
+            return db;
+          }),
+      });
+      await vi.advanceTimersByTimeAsync(500);
+      const out = await result;
+      expect(out.persistent).toBe(false);
+      expect(out.reason).toBeInstanceOf(StorageUnavailableError);
+      expect(out.reason?.message).toMatch(/another tab/i);
+
+      // The abandoned open finally succeeds: its connection is closed, not leaked, and no probe write happens.
+      release?.(fake.db as unknown as IDBPDatabase<unknown>);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(closes).toEqual(["closed"]);
+      expect(fake.db.stores.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("a failed open is not cached: the next operation tries again", async () => {
     const fake = fakeIdb();
     let fail = true;
